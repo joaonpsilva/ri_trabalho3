@@ -32,13 +32,13 @@ class Indexer():
             pickle.dump(content, f)
 
         self.idMap = {}
-    
+
     def loadIDMap(self, idMapFile):
         with open(idMapFile, 'rb') as f:
             self.idMap = pickle.load(f)
-    
+
     def extractDocData(self, tokens):
-        #count occurs and positions
+        # count occurs and positions
         tokensCount = {}
         for ind in range(len(tokens)):
             word = tokens[ind]
@@ -48,8 +48,8 @@ class Indexer():
             else:
                 info = tokensCount[word]
                 info[1].append(ind)
-                tokensCount[word] = (info[0]+1, info[1])
-        
+                tokensCount[word] = (info[0] + 1, info[1])
+
         return tokensCount
 
     def addTokensToIndex(self, tokens):
@@ -97,14 +97,17 @@ class Indexer():
         for term, values in self.invertedIndex.items():
             string = ('{}:{}'.format(term, values[0]))
             for posting in values[1]:
-                string += (';{}:{}'.format(posting.docID, posting.score))
+                string += (';{}:{}:'.format(posting.docID, posting.score))  # doc_id:term_weight
+                for position in posting.positions:
+                    string += ('{},'.format(position))  # pos1,pos2,pos3,…
+                string = string[:-1]    # remover a virgula final (para ficar bonito)
             string += "\n"
             f.write(string)
 
         print("File {} created".format(file))
         f.close()
-        
-        #WRITE IDMAP
+
+        # WRITE IDMAP
         idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
         print("Writing idMap to {}".format(idMapFile))
         with open(idMapFile, 'wb') as f:  # Init or clean file
@@ -130,7 +133,7 @@ class Indexer():
             line = line.split(";")
             term = line[0].split(":")[0]
             idf = float(line[0].split(":")[1])
-            
+
             postingList = [Posting(int(values.split(":")[0]), float(values.split(":")[1])) for values in line[1:]]
 
             self.invertedIndex[term] = [idf, postingList]
@@ -138,12 +141,10 @@ class Indexer():
         f.close()
         print("Index created from file {}".format(file))
 
-        #LOAD IDMAP
+        # LOAD IDMAP
         idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
         print("Reading idMap from {}".format(idMapFile))
         self.loadIDMap(idMapFile)
-    
-
 
 
 if __name__ == "__main__":
