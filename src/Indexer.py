@@ -94,13 +94,13 @@ class Indexer():
         # Abrir o ficheiro em "append" para adicionar linha a linha (em vez de uma string enorme)
         f = open(file, "a")
 
-        for term, values in self.invertedIndex.items():
+        for term, values in sorted(self.invertedIndex.items()):
             string = ('{}:{}'.format(term, values[0]))
             for posting in values[1]:
                 string += (';{}:{}:'.format(posting.docID, posting.score))  # doc_id:term_weight
                 for position in posting.positions:
                     string += ('{},'.format(position))  # pos1,pos2,pos3,…
-                string = string[:-1]    # remover a virgula final (para ficar bonito)
+                string = string[:-1]  # remover a virgula final (para ficar bonito)
             string += "\n"
             f.write(string)
 
@@ -129,12 +129,16 @@ class Indexer():
                 break
 
             # formato de cada linha:
-            # termo:idf ; doc_id:term_weight ; doc_id:term_weight ; ...
+            # term:idf ; doc_id:term_weight:pos1,pos2,pos3... ; doc_id:term_weight:pos1,pos2,pos3 ; ...
             line = line.split(";")
             term = line[0].split(":")[0]
             idf = float(line[0].split(":")[1])
 
-            postingList = [Posting(int(values.split(":")[0]), float(values.split(":")[1])) for values in line[1:]]
+            postingList = [Posting(
+                docID=int(values.split(":")[0]),  # doc_id
+                score=float(values.split(":")[1]),  # term_weight
+                positions=[int(position) for position in values.split(":")[2].split(",")])  # pos1,pos2,pos3...
+                for values in line[1:]]  # values = [doc_id:term_weight:pos1,pos2 , doc_id:term_weight:pos1,pos2]
 
             self.invertedIndex[term] = [idf, postingList]
 
