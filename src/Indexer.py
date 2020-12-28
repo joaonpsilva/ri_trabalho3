@@ -114,7 +114,7 @@ class Indexer():
             pickle.dump({}, f)
         self.idMapToDisk(idMapFile)
 
-    def read_file(self, file="../Index.txt"):
+    def read_file(self, file="../Index.txt", size=-1):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
         print("Reading {}".format(file))
         try:
             f = open(file)
@@ -122,10 +122,12 @@ class Indexer():
             print('File {} was not found'.format(file))
             return
         self.invertedIndex = {}
-
+        readLines = 0
         while True:
             line = f.readline()  # ler linha a linha
-            if not line:
+            readLines += 1
+
+            if not line or (readLines >= size != -1):
                 break
 
             # formato de cada linha:
