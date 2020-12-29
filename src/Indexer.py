@@ -20,7 +20,7 @@ class Indexer():
         self.docID = 0
 
     def hasEnoughMemory(self):
-        return True
+        return process.memory_info().rss < 4000000000   #4 GB
 
     def idMapToDisk(self, idMapFile):
         with open(idMapFile, 'rb') as f:
@@ -65,23 +65,27 @@ class Indexer():
 
     def index(self, CorpusReader):
 
-        count = 0
-        while self.hasEnoughMemory():
+        while True:
 
-            data = CorpusReader.getNextChunk()
-            if data is None:
-                print("Finished")
-                break
+            if self.hasEnoughMemory():
+                data = CorpusReader.getNextChunk()
+                if data is None:
+                    print("Finished")
+                    break
 
-            for document in data:  # Iterate over Chunk of documents
-                doi, title, abstract = document[0], document[1], document[2]
-                self.idMap[self.docID] = doi  # map ordinal id used in index to real id
+                for document in data:  # Iterate over Chunk of documents
+                    doi, title, abstract = document[0], document[1], document[2]
+                    self.idMap[self.docID] = doi  # map ordinal id used in index to real id
 
-                tokens = self.tokenizer.process(title, abstract)
+                    tokens = self.tokenizer.process(title, abstract)
 
-                self.addTokensToIndex(tokens)
+                    self.addTokensToIndex(tokens)
 
-                self.docID += 1
+                    self.docID += 1
+            
+            else:
+                #DUMP INDEX
+                pass
 
     def write_to_file(self, file="../Index.txt"):
         print("Writing to {}".format(file))
