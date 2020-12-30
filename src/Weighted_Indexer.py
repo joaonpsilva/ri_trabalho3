@@ -179,12 +179,17 @@ else:
 
     indexer = Tf_idf_Indexer(tokenizer)
 
-# INV_INDEX
+# READ INDEX
 if args.l is not None:  # LOAD INV IND FROM FILE
+    from FileWriter import FileWriter
+
+    fileWriter = FileWriter(indexer)
     t1 = time.time()
-    indexer.read_file(args.l)
+    fileWriter.read_file(args.l, size=-1)  # size -1 => ler ficheiro todo
+    # fileWriter.read_file(args.l, size=10)   # lê apenas 10 linhas do ficheiro
     t2 = time.time()
     print('Loading Time: ', t2 - t1)
+
 
 else:  # BUILD INV IND FROM CORPUS
     from Corpus import CorpusReader
@@ -204,7 +209,7 @@ if args.query:
     relevant_docs = getRelevantDocs()  # dicionario com formato {numero_da_query : [lista de docs relevantes]}
 
     for size in [10, 20, 50]:
-        valores={}                       # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
+        valores = {}  # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
         for entrie in root.findall('topic'):
             number = entrie.get('number')
             query = entrie.find('query').text
@@ -259,4 +264,7 @@ if args.query:
 
 # SAVE INDEX
 if args.out is not None:
-    indexer.write_to_file(args.out)
+    from FileWriter import FileWriter
+
+    fileWriter = FileWriter(indexer)
+    fileWriter.write_to_file(args.out)
