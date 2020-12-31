@@ -7,7 +7,7 @@ parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tok
 parser.add_argument("-c", type=str, default="../metadata_2020-03-27.csv", help="Corpus file")
 parser.add_argument("-l", type=str, help="Load Inverted Index")
 parser.add_argument("-i", type=str, choices=['bm25', 'tfidf'], required=True, help="Indexer")
-parser.add_argument("-out", type=str, help="Output file to save Inverted Index")
+parser.add_argument("-out", default="../models/Indexer.txt", type=str, help="Output file to save Inverted Index")
 parser.add_argument("-relevant", type=str, default="../queries.relevance.filtered.txt",
                     help="file with the relevant query result")
 parser.add_argument("--query", action="store_true", help="Process Queries")
@@ -172,12 +172,10 @@ else:
 # INDEXER
 if args.i == 'bm25':
     from BM25_Indexer import BM25_Indexer
-
-    indexer = BM25_Indexer(tokenizer)
+    indexer = BM25_Indexer(tokenizer, args.out)
 else:
     from Tf_Idf_Indexer import Tf_idf_Indexer
-
-    indexer = Tf_idf_Indexer(tokenizer)
+    indexer = Tf_idf_Indexer(tokenizer, args.out)
 
 # INV_INDEX
 if args.l is not None:  # LOAD INV IND FROM FILE
@@ -256,7 +254,3 @@ if args.query:
         print(t)
 
     writeToCsv(valores10, valores20, valores50, args.i)
-
-# SAVE INDEX
-if args.out is not None:
-    indexer.write_to_file(args.out)

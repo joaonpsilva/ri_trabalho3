@@ -16,16 +16,12 @@ process = psutil.Process(os.getpid())
 
 class Tf_idf_Indexer(Indexer):
 
-    def __init__(self, tokenizer):
-        super().__init__(tokenizer)
+    def __init__(self, tokenizer, outputFile):
+        super().__init__(tokenizer, outputFile)
 
-    def build_idf(self):
-        for term, valList in self.invertedIndex.items():
-            valList[0] = log10(self.docID / valList[0])
 
     def index(self,corpusreader):
         super().index(corpusreader)
-        self.build_idf()
 
     def addTokensToIndex(self, tokens):
 

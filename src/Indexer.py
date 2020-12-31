@@ -8,30 +8,25 @@ import argparse
 import os
 import psutil
 import pickle
+from Block_Reader import Block_Reader
+from math import log10
 
 process = psutil.Process(os.getpid())
 
 
 class Indexer():
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, outputFile):
         self.tokenizer = tokenizer
         self.idMap = {}
         self.invertedIndex = {}
         self.docID = 0
+        self.blocks = 0
+        self.blocksFolder = "../blocks/"
+        self.outputFile = outputFile
 
     def hasEnoughMemory(self):
-        return True
-
-    def idMapToDisk(self, idMapFile):
-        with open(idMapFile, 'rb') as f:
-            content = pickle.load(f)
-
-        content.update(self.idMap)
-
-        with open(idMapFile, 'wb') as f:
-            pickle.dump(content, f)
-
-        self.idMap = {}
+        print(process.memory_info().rss)
+        return process.memory_info().rss < 3000000000   #4 GB
 
     def loadIDMap(self, idMapFile):
         with open(idMapFile, 'rb') as f:
@@ -39,6 +34,8 @@ class Indexer():
 
     def extractDocData(self, tokens):
         # count occurs and positions
+        # receives tokens
+        # returns dict, key=term, value=(occur, [positions])
         tokensCount = {}
         for ind in range(len(tokens)):
             word = tokens[ind]
@@ -53,6 +50,8 @@ class Indexer():
         return tokensCount
 
     def addTokensToIndex(self, tokens):
+        #DOESNT MATTER, its overide by bm25 and tfidf
+
         for word in tokens:  # Iterate over token of documents
 
             if word not in self.invertedIndex:
@@ -66,22 +65,114 @@ class Indexer():
     def index(self, CorpusReader):
 
         count = 0
-        while self.hasEnoughMemory():
+        flag = True
 
-            data = CorpusReader.getNextChunk()
-            if data is None:
-                print("Finished")
-                break
+        while True:
 
-            for document in data:  # Iterate over Chunk of documents
-                doi, title, abstract = document[0], document[1], document[2]
-                self.idMap[self.docID] = doi  # map ordinal id used in index to real id
+            if self.hasEnoughMemory():
+                data = CorpusReader.getNextChunk()
+                if data is None:
+                    print("Finished")
+                    break
 
-                tokens = self.tokenizer.process(title, abstract)
+                for document in data:  # Iterate over Chunk of documents
+                    doi, title, abstract = document[0], document[1], document[2]
+                    self.idMap[self.docID] = doi  # map ordinal id used in index to real id
 
-                self.addTokensToIndex(tokens)
+                    tokens = self.tokenizer.process(title, abstract)
 
-                self.docID += 1
+                    self.addTokensToIndex(tokens)
+
+                    self.docID += 1
+            else:
+                #No space available, save block
+                self.dumpBlock()
+                flag = False
+
+        if flag:
+            #only 1 block, write directly to outputfile
+            self.write_to_file(self.outputFile)
+        else:
+            self.dumpBlock()
+            #MERGE INDEXES
+            self.mergeIndexes(self.outputFile)
+
+    def dumpBlock(self):
+        self.write_to_file(self.blocksFolder + str(self.blocks) + "Block.txt")
+        self.blocks += 1
+        self.invertedIndex = {}
+        self.idMap = {}
+
+    def mergeIndexes(self, filename):
+
+        finalIndex = open(filename, 'w')
+        print("Writing Index to {}".format(filename))
+
+        numberOfBlocks = len([name for name in os.listdir(self.blocksFolder)]) / 2
+        numberOfBlocks = int(numberOfBlocks)
+        block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(numberOfBlocks)]
+        
+        # WRITE IDMAP
+        idMapFile = os.path.splitext(filename)[0] + "_idMapFile.pickle"
+        print("Writing idMap to {}".format(idMapFile))
+
+        content = {}
+        for b in block_readers:
+            content.update(b.read_IdMap())
+
+        with open(idMapFile, 'wb') as f:
+            pickle.dump(content, f)
+        
+        #MERGE INDEXES
+        flag = False
+        toRemove = []
+
+        while True:
+
+            idf = 0
+            postingList = ""
+
+            #GET NEXT WORD IN ALPHABETIC ORDER
+            words = []
+            for b in block_readers:
+                
+                entry = b.getEntry()
+
+                if entry is None:    #Block is empty
+                    flag = True
+                    toRemove.append(b)
+                else:
+                    nextword = entry[0]
+                    words.append(nextword)
+                            
+            #REMOVE READER WHICH BLOCK IS EMPTY 
+            if flag:    
+                for b in toRemove:
+                    block_readers.remove(b)
+                    b.delete()
+                    numberOfBlocks-=1
+                toRemove = []
+                flag = False
+
+                if numberOfBlocks == 0:
+                    finalIndex.close()
+                    return
+
+            nextword = min(words)
+            #GET INFO FOR THE GIVEN TERM FROM ALL BLOCKS
+            for b in block_readers:
+                entry = b.getEntry()
+                term = entry[0]
+                if term == nextword:
+                    idf += entry[1][0]
+                    postingList += ";" + entry[1][1]            #going through blocks in order so doc ids will be ordered
+                    b.increment()   #if reader had the term, go to next line
+            
+            idf = log10(self.docID / idf)
+            string = ('{}:{}{}'.format(term, idf, postingList)) + "\n"
+            finalIndex.write(string)
+
+
 
     def write_to_file(self, file="../Index.txt"):
         print("Writing to {}".format(file))
@@ -110,9 +201,9 @@ class Indexer():
         # WRITE IDMAP
         idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
         print("Writing idMap to {}".format(idMapFile))
-        with open(idMapFile, 'wb') as f:  # Init or clean file
-            pickle.dump({}, f)
-        self.idMapToDisk(idMapFile)
+        with open(idMapFile, 'wb') as f:
+            pickle.dump(self.idMap, f)
+
 
     def read_file(self, file="../Index.txt", size=-1):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
         print("Reading {}".format(file))
@@ -121,7 +212,8 @@ class Indexer():
         except FileNotFoundError:
             print('File {} was not found'.format(file))
             return
-        self.invertedIndex = {}
+
+        self.invertedindex = {}
         readLines = 0
         while True:
             line = f.readline()  # ler linha a linha
