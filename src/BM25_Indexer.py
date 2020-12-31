@@ -13,9 +13,10 @@ import collections
 
 process = psutil.Process(os.getpid())
 
+
 class BM25_Indexer(Indexer):
 
-    def __init__(self,tokenizer, k1=1.2, b=0.75):
+    def __init__(self, tokenizer, k1=1.2, b=0.75):
         super().__init__(tokenizer)
         self.k1 = k1
         self.b = b
@@ -23,10 +24,10 @@ class BM25_Indexer(Indexer):
 
     def build_idf(self):
         for term, valList in self.invertedIndex.items():
-            valList[0] = log10(self.docID/valList[0])
+            valList[0] = log10(self.docID / valList[0])
 
     def calcAvdl(self, corpusreader):
-        count=0
+        count = 0
         while True:
             data = corpusreader.getNextChunk()
             if data is None:
@@ -36,7 +37,7 @@ class BM25_Indexer(Indexer):
                 doi, title, abstract = document[0], document[1], document[2]
                 tokens = self.tokenizer.process(title, abstract)
                 self.avdl += len(tokens)
-                count+=1
+                count += 1
 
         self.avdl /= count
 
@@ -47,32 +48,54 @@ class BM25_Indexer(Indexer):
 
     def addTokensToIndex(self, tokens):
 
-        #count occurs and positions
+        # count occurs and positions
         tokensCount = self.extractDocData(tokens)
 
-        #calc length
+        # calc length
         dl = sum([info[0] for term, info in tokensCount.items()])
 
-        #add to index
+        # add to index
         for token, info in tokensCount.items():
-            
+
             tf = info[0]
             positions = info[1]
 
-            score = ((self.k1 + 1) * tf) / (self.k1 * ((1-self.b) + self.b*(dl / self.avdl)) + tf)
+            score = ((self.k1 + 1) * tf) / (self.k1 * ((1 - self.b) + self.b * (dl / self.avdl)) + tf)
 
             posting = Posting(self.docID, score, positions)
             if token not in self.invertedIndex:
                 self.invertedIndex[token] = [1, [posting]]
             else:
                 self.invertedIndex[token][1].append(posting)
-                self.invertedIndex[token][0] += 1    
+                self.invertedIndex[token][0] += 1
 
+    '''
+    def checkProximity(self, doc, term1, queryTokens):
+
+        scoreBoost = 0
+        index = queryTokens.index(term1) + 1
+
+        if len(queryTokens) > index and queryTokens[index] in self.invertedIndex:
+
+            # Find posting with same docID
+            for posting in self.invertedIndex[queryTokens[index]][1]:
+                if posting.docID == doc.docID:
+                    break
+
+                if posting.docID > doc.docID:
+                    break
+
+        return scoreBoost
+        '''
 
     def score(self, query, ndocs=None):
         queryTokens = self.tokenizer.process(query)
-        
+
         doc_scores = {}
+
+        proximity_boost = True
+        positions = {}
+
         for term in queryTokens:
 
             if term not in self.invertedIndex:
@@ -81,12 +104,27 @@ class BM25_Indexer(Indexer):
             idf = self.invertedIndex[term][0]
             for doc in self.invertedIndex[term][1]:
 
-                score = idf * doc.score 
+                score = idf * doc.score
+
+                if proximity_boost:
+                    positions[doc.docID] = {term: doc.positions}
 
                 if doc.docID in doc_scores:
                     doc_scores[doc.docID] += score
                 else:
                     doc_scores[doc.docID] = score
+
+        if proximity_boost:
+            for doc in positions:
+                scoreBoost = 0
+                # for term in doc:
+                # todo
+                # min(myList, key=lambda x: abs(x - myNumber))
+                '''
+                        term1 : positions
+                doc.ID: term2 : positions
+                        term3 : positions
+                '''
 
         if ndocs == None:
             bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
@@ -94,7 +132,7 @@ class BM25_Indexer(Indexer):
             bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
         return [self.idMap[docid] for docid, score in bestDocs]
-        
+
 
 if __name__ == "__main__":
 
@@ -109,24 +147,21 @@ if __name__ == "__main__":
     else:
         tokenizer = Tokenizer2()
 
-    #CREATE INDEXER
+    # CREATE INDEXER
     indexer = BM25_Indexer(tokenizer)
-    
-    #GET RESULTS
+
+    # GET RESULTS
     t1 = time.time()
     indexer.index(corpusreader)
     t2 = time.time()
 
-    print('seconds: ', t2-t1)
+    print('seconds: ', t2 - t1)
     print("Total memory used by program: ", process.memory_info().rss)
-    
+
     keyList = list(indexer.invertedIndex.keys())
     print('Vocabulary size: ', len(keyList))
 
-    indexer.write_to_file()
-
-    #QUERY
+    # QUERY
 
     query = input("Query: ")
     print(indexer.score(query))
-
