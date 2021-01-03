@@ -10,6 +10,7 @@ import psutil
 import pickle
 from Block_Reader import Block_Reader
 from math import log10
+from Posting_Iterator import Posting_Iterator
 
 process = psutil.Process(os.getpid())
 
@@ -25,7 +26,7 @@ class Indexer():
         self.outputFile = outputFile
 
     def hasEnoughMemory(self):
-        print(process.memory_info().rss)
+        #print(process.memory_info().rss)
         return process.memory_info().rss < 3000000000   #4 GB
 
     def loadIDMap(self, idMapFile):
@@ -61,6 +62,10 @@ class Indexer():
                     -1]:  # check if word did not happen previously in same doc.
                     self.invertedIndex[word][1].append(self.docID)
                     self.invertedIndex[word][0] += 1
+    
+    def build_idf(self):
+        for term, valList in self.invertedIndex.items():
+            valList[0] = log10(self.docID/valList[0])
 
     def index(self, CorpusReader):
 
@@ -91,11 +96,12 @@ class Indexer():
 
         if flag:
             #only 1 block, write directly to outputfile
+            self.build_idf()
             self.write_to_file(self.outputFile)
         else:
             self.dumpBlock()
             #MERGE INDEXES
-            self.mergeIndexes(self.outputFile)
+            self.mergeBlocks(self.outputFile)
 
     def dumpBlock(self):
         self.write_to_file(self.blocksFolder + str(self.blocks) + "Block.txt")
@@ -103,7 +109,7 @@ class Indexer():
         self.invertedIndex = {}
         self.idMap = {}
 
-    def mergeIndexes(self, filename):
+    def mergeBlocks(self, filename):
 
         finalIndex = open(filename, 'w')
         print("Writing Index to {}".format(filename))
@@ -243,6 +249,88 @@ class Indexer():
         idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
         print("Reading idMap from {}".format(idMapFile))
         self.loadIDMap(idMapFile)
+    
+    def proximityScore(self, query, ndocs=None):
+        queryTokens = self.tokenizer.process(query)
+
+        if len(queryTokens) == 1:
+            return self.score(query, ndocs)
+
+        postList = [Posting_Iterator(term, self.invertedIndex[term]) for term in queryTokens if term in self.invertedIndex]
+        toRemove = []
+
+        docScores = {}
+        while True:
+            
+            #Get next Posting
+            smallestPost = None
+            for p in postList:
+                postingInfo = p.getPosting()
+
+                if postingInfo == None: #if postingList got to the end
+                    toRemove.append(p)
+                    continue
+                
+                if smallestPost == None or postingInfo < smallestPost.getPosting(): #get next posting: compare docID, then position
+                    smallestPost = p
+            
+
+            #remove postings that got to the end
+            if len(toRemove) != 0:
+                for p in toRemove:
+                    postList.remove(p)
+                toRemove = []
+            if len(postList) < 2:
+                break
+
+
+            #iterate over the postings
+            for p in postList:
+
+                if self.areNextToEachOther(smallestPost.getPosting(), p.getPosting()):
+                    
+                    #Account for postings
+                    score = self.getScore(smallestPost) + self.getScore(p) 
+                    if score != 0:
+                        doc = smallestPost.getPosting()[0]
+
+                        if doc in docScores:
+                            docScores[doc] += score
+                        else:
+                            docScores[doc] = score
+            
+            smallestPost.increment()
+        
+        if ndocs == None:
+            bestDocs = sorted(docScores.items(), key=lambda item: item[1], reverse=True)
+        else:
+            bestDocs = heapq.nlargest(ndocs, docScores.items(), key=lambda item: item[1])
+
+        return [self.idMap[docid] for docid, score in bestDocs]
+
+
+    def areNextToEachOther(self, postingInfo1, postingInfo2):
+        if postingInfo1[0] == postingInfo2[0]:    #same doc
+            if 0 != abs(postingInfo1[1] - postingInfo2[1]) < 5:
+                return True
+        return False
+
+    def getScore(self, p):
+        if p.isAccounted():
+            return 0
+        
+        p.setAccounted()
+        return self.calcScore(p.idf, p.getScore())
+    
+    def calcScore(self, idf, score):    #defined in children
+        pass
+    def score(self, query, ndocs=None): #defined in children
+        pass
+        
+
+
+
+
 
 
 if __name__ == "__main__":

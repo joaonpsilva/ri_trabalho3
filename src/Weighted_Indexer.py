@@ -208,7 +208,7 @@ if args.query:
             query = entrie.find('query').text
 
             start_time = time.time()
-            retrieved_docs = indexer.score(query, size)
+            retrieved_docs = indexer.proximityScore(query, size)
             stop_time = time.time()
 
             if size == 50:

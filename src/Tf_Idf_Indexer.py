@@ -78,6 +78,9 @@ class Tf_idf_Indexer(Indexer):
             bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])        
         
         return [self.idMap[docid] for docid, score in bestDocs]
+    
+    def calcScore(self, idf, score):
+        return idf * score
 
 
 if __name__ == "__main__":
