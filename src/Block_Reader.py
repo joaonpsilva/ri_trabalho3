@@ -7,7 +7,6 @@ class Block_Reader():
     def __init__(self, filename):
 
         self.filename = filename
-        self.idMapFile = os.path.splitext(self.filename)[0] + "_idMapFile.pickle"
 
         print("Reading {}".format(filename))
         try:
@@ -23,7 +22,7 @@ class Block_Reader():
         self.read_chunk(self.chunk_Size)
 
     def getEntry(self):
-        return self.indexList[self.i]
+        return self.indexList[self.i]   #(term, [idf, postingList])
     
     def increment(self):
         
@@ -33,8 +32,8 @@ class Block_Reader():
             self.i+=1
 
     def delete(self):
+        print("Deleting {}".format(self.filename))
         os.remove(self.filename)
-        os.remove(self.idMapFile)
 
     def read_chunk(self, size=-1):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
 
@@ -64,9 +63,3 @@ class Block_Reader():
 
             self.indexList.append( (term, [idf, postingList]) )
     
-    def read_IdMap(self):
-        # LOAD IDMAP
-        print("Reading idMap from {}".format(self.idMapFile))
-        
-        with open(self.idMapFile, 'rb') as f:
-            return pickle.load(f)

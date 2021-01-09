@@ -23,6 +23,7 @@ class BM25_Indexer(Indexer):
 
 
     def calcAvdl(self, corpusreader):
+        print("Calculating average document length for bm25")
         count=0
         while True:
             data = corpusreader.getNextChunk()

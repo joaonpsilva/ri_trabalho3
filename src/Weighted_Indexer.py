@@ -7,7 +7,7 @@ parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tok
 parser.add_argument("-c", type=str, default="../metadata_2020-03-27.csv", help="Corpus file")
 parser.add_argument("-l", type=str, help="Load Inverted Index")
 parser.add_argument("-i", type=str, choices=['bm25', 'tfidf'], required=True, help="Indexer")
-parser.add_argument("-out", default="../models/Indexer.txt", type=str, help="Output file to save Inverted Index")
+parser.add_argument("-out", default="../model/", type=str, help="Output folder to save Inverted Index")
 parser.add_argument("-relevant", type=str, default="../queries.relevance.filtered.txt",
                     help="file with the relevant query result")
 parser.add_argument("--query", action="store_true", help="Process Queries")
@@ -58,6 +58,8 @@ def calculateAveragePrecision(retrieved_docs, relevantList):
             averagePrecision += calculatePrecision(ret_docs, relevantList)
             relevantCount += 1
 
+    if relevantCount == 0:
+        return 0
     averagePrecision = averagePrecision / relevantCount
     return averagePrecision
 
@@ -218,11 +220,19 @@ if args.query:
             valores[number] = {}  # inicializar o dicionario nested
 
             valores[number]["latecy"] = (stop_time - start_time)
-            precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
-            recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
-            valores[number]["f-measure"] = calculateF_Measure(precision, recall)
-            valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
-            valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+
+            if len(retrieved_docs) == 0:
+                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+            else:
+                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
 
         valores["mean"] = calculateMean(valores)
 

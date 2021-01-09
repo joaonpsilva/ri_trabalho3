@@ -11,27 +11,52 @@ import pickle
 from Block_Reader import Block_Reader
 from math import log10
 from Posting_Iterator import Posting_Iterator
+from shutil import rmtree
 
 process = psutil.Process(os.getpid())
 
 
 class Indexer():
-    def __init__(self, tokenizer, outputFile):
+    def __init__(self, tokenizer, outputFolder):
         self.tokenizer = tokenizer
         self.idMap = {}
         self.invertedIndex = {}
         self.docID = 0
         self.blocks = 0
-        self.blocksFolder = "../blocks/"
-        self.outputFile = outputFile
+        self.outputFolder = outputFolder
+        self.blocksFolder = outputFolder + "Blocks/"
+        self.idMapFile = outputFolder + "idMap.pickle"
+
+        if os.path.exists(self.outputFolder):
+            rmtree(self.outputFolder)
+        
+        print("Creating {} folder".format(self.outputFolder))
+        print("Creating {} folder".format(self.blocksFolder))
+        os.makedirs(self.outputFolder)
+        os.makedirs(self.blocksFolder)
+        
+        print("Creating {} file".format(self.idMapFile))
+        with open(self.idMapFile, 'wb') as f:
+            pickle.dump({}, f)
 
     def hasEnoughMemory(self):
         #print(process.memory_info().rss)
         return process.memory_info().rss < 3000000000   #4 GB
 
-    def loadIDMap(self, idMapFile):
-        with open(idMapFile, 'rb') as f:
+    def loadIDMap(self):
+        with open(self.idMapFile, 'rb') as f:
             self.idMap = pickle.load(f)
+    
+    def writeIDMap(self):
+        print("Updating IdMapFile")
+       
+        with open(self.idMapFile, 'rb') as f:
+            content = pickle.load(f)
+        
+        self.idMap.update(content)
+
+        with open(self.idMapFile, 'wb') as f:
+            pickle.dump(self.idMap, f)
 
     def extractDocData(self, tokens):
         # count occurs and positions
@@ -68,7 +93,7 @@ class Indexer():
             valList[0] = log10(self.docID/valList[0])
 
     def index(self, CorpusReader):
-
+        print("Indexing...")
         count = 0
         flag = True
 
@@ -77,7 +102,7 @@ class Indexer():
             if self.hasEnoughMemory():
                 data = CorpusReader.getNextChunk()
                 if data is None:
-                    print("Finished")
+                    print("Finished Indexing")
                     break
 
                 for document in data:  # Iterate over Chunk of documents
@@ -97,48 +122,45 @@ class Indexer():
         if flag:
             #only 1 block, write directly to outputfile
             self.build_idf()
-            self.write_to_file(self.outputFile)
+            self.write_to_file(self.outputFolder + "000-zzz.txt")
+            self.writeIDMap()
+
         else:
             self.dumpBlock()
             #MERGE INDEXES
-            self.mergeBlocks(self.outputFile)
+            self.mergeBlocks()
+        
+        os.rmdir(self.blocksFolder)
 
     def dumpBlock(self):
         self.write_to_file(self.blocksFolder + str(self.blocks) + "Block.txt")
-        self.blocks += 1
         self.invertedIndex = {}
+
+        self.writeIDMap()
         self.idMap = {}
 
-    def mergeBlocks(self, filename):
+        self.blocks += 1
 
-        finalIndex = open(filename, 'w')
-        print("Writing Index to {}".format(filename))
-
-        numberOfBlocks = len([name for name in os.listdir(self.blocksFolder)]) / 2
-        numberOfBlocks = int(numberOfBlocks)
-        block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(numberOfBlocks)]
+    def mergeBlocks(self):
         
-        # WRITE IDMAP
-        idMapFile = os.path.splitext(filename)[0] + "_idMapFile.pickle"
-        print("Writing idMap to {}".format(idMapFile))
+        print("Merging Indexes")
 
-        content = {}
-        for b in block_readers:
-            content.update(b.read_IdMap())
-
-        with open(idMapFile, 'wb') as f:
-            pickle.dump(content, f)
+        block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(self.blocks)]
+        optiFileSize = os.path.getsize(self.blocksFolder + "0Block.txt") - 1000 #-1000 for good mesure 
         
         #MERGE INDEXES
         flag = False
         toRemove = []
+        currentFile = None
+        firstWord = ""
+        lastWord = ""
 
         while True:
 
             idf = 0
             postingList = ""
 
-            #GET NEXT WORD IN ALPHABETIC ORDER
+            #GET List OF NEXT WORDS FROM BLOCKS IN ALPHABETIC ORDER
             words = []
             for b in block_readers:
                 
@@ -148,23 +170,30 @@ class Indexer():
                     flag = True
                     toRemove.append(b)
                 else:
-                    nextword = entry[0]
-                    words.append(nextword)
+                    words.append(entry[0])
                             
             #REMOVE READER WHICH BLOCK IS EMPTY 
             if flag:    
                 for b in toRemove:
                     block_readers.remove(b)
                     b.delete()
-                    numberOfBlocks-=1
+                    self.blocks-=1
                 toRemove = []
                 flag = False
 
-                if numberOfBlocks == 0:
-                    finalIndex.close()
+                if self.blocks == 0:
+                    currentFile.close()
+                    os.rename(self.outputFolder + firstWord + ".txt", self.outputFolder + firstWord + "_" + lastWord + ".txt")
+                    print("Finished Merging")
                     return
+            
+            nextword = min(words)   #get next word in alphabetic order
 
-            nextword = min(words)
+            if currentFile is None: #create file with 1st term
+                firstWord = nextword
+                currentFile = open(self.outputFolder + firstWord + ".txt", "w")
+
+
             #GET INFO FOR THE GIVEN TERM FROM ALL BLOCKS
             for b in block_readers:
                 entry = b.getEntry()
@@ -175,8 +204,15 @@ class Indexer():
                     b.increment()   #if reader had the term, go to next line
             
             idf = log10(self.docID / idf)
-            string = ('{}:{}{}'.format(term, idf, postingList)) + "\n"
-            finalIndex.write(string)
+            string = ('{}:{}{}'.format(nextword, idf, postingList)) + "\n"
+            currentFile.write(string)                                           #write result to file
+
+            lastWord = nextword
+
+            if currentFile.tell() > optiFileSize:           #good size, close file
+                currentFile.close()
+                os.rename(self.outputFolder + firstWord + ".txt", self.outputFolder + firstWord + "_" + lastWord + ".txt")
+                currentFile = None
 
 
 
@@ -201,14 +237,9 @@ class Indexer():
             string += "\n"
             f.write(string)
 
-        print("File {} created".format(file))
+        print("Done writting to {}".format(file))
         f.close()
 
-        # WRITE IDMAP
-        idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
-        print("Writing idMap to {}".format(idMapFile))
-        with open(idMapFile, 'wb') as f:
-            pickle.dump(self.idMap, f)
 
 
     def read_file(self, file="../Index.txt", size=-1):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
@@ -246,9 +277,8 @@ class Indexer():
         print("Index created from file {}".format(file))
 
         # LOAD IDMAP
-        idMapFile = os.path.splitext(file)[0] + "_idMapFile.pickle"
-        print("Reading idMap from {}".format(idMapFile))
-        self.loadIDMap(idMapFile)
+        print("Reading idMap from {}".format(self.idMapFile))
+        self.loadIDMap()
     
     def proximityScore(self, query, ndocs=None):
         queryTokens = self.tokenizer.process(query)
