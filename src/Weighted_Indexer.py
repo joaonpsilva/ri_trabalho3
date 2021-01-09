@@ -7,7 +7,7 @@ parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tok
 parser.add_argument("-c", type=str, default="../metadata_2020-03-27.csv", help="Corpus file")
 parser.add_argument("-l", type=str, help="Load Inverted Index")
 parser.add_argument("-i", type=str, choices=['bm25', 'tfidf'], required=True, help="Indexer")
-parser.add_argument("-out", type=str, help="Output file to save Inverted Index")
+parser.add_argument("-out", default="../model/", type=str, help="Output folder to save Inverted Index")
 parser.add_argument("-relevant", type=str, default="../queries.relevance.filtered.txt",
                     help="file with the relevant query result")
 parser.add_argument("--query", action="store_true", help="Process Queries")
@@ -58,6 +58,8 @@ def calculateAveragePrecision(retrieved_docs, relevantList):
             averagePrecision += calculatePrecision(ret_docs, relevantList)
             relevantCount += 1
 
+    if relevantCount == 0:
+        return 0
     averagePrecision = averagePrecision / relevantCount
     return averagePrecision
 
@@ -172,12 +174,10 @@ else:
 # INDEXER
 if args.i == 'bm25':
     from BM25_Indexer import BM25_Indexer
-
-    indexer = BM25_Indexer(tokenizer)
+    indexer = BM25_Indexer(tokenizer, args.out)
 else:
     from Tf_Idf_Indexer import Tf_idf_Indexer
-
-    indexer = Tf_idf_Indexer(tokenizer)
+    indexer = Tf_idf_Indexer(tokenizer, args.out)
 
 # INV_INDEX
 if args.l is not None:  # LOAD INV IND FROM FILE
@@ -210,7 +210,7 @@ if args.query:
             query = entrie.find('query').text
 
             start_time = time.time()
-            retrieved_docs = indexer.score(query, size)
+            retrieved_docs = indexer.proximityScore(query, size)
             stop_time = time.time()
 
             if size == 50:
@@ -220,11 +220,19 @@ if args.query:
             valores[number] = {}  # inicializar o dicionario nested
 
             valores[number]["latecy"] = (stop_time - start_time)
-            precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
-            recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
-            valores[number]["f-measure"] = calculateF_Measure(precision, recall)
-            valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
-            valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+
+            if len(retrieved_docs) == 0:
+                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+            else:
+                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
 
         valores["mean"] = calculateMean(valores)
 
@@ -256,7 +264,3 @@ if args.query:
         print(t)
 
     writeToCsv(valores10, valores20, valores50, args.i)
-
-# SAVE INDEX
-if args.out is not None:
-    indexer.write_to_file(args.out)

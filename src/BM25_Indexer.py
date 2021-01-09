@@ -15,17 +15,15 @@ process = psutil.Process(os.getpid())
 
 class BM25_Indexer(Indexer):
 
-    def __init__(self,tokenizer, k1=1.2, b=0.75):
-        super().__init__(tokenizer)
+    def __init__(self,tokenizer, outputFile, k1=1.2, b=0.75):
+        super().__init__(tokenizer, outputFile)
         self.k1 = k1
         self.b = b
         self.avdl = 0
 
-    def build_idf(self):
-        for term, valList in self.invertedIndex.items():
-            valList[0] = log10(self.docID/valList[0])
 
     def calcAvdl(self, corpusreader):
+        print("Calculating average document length for bm25")
         count=0
         while True:
             data = corpusreader.getNextChunk()
@@ -43,7 +41,6 @@ class BM25_Indexer(Indexer):
     def index(self, corpusreader):
         self.calcAvdl(corpusreader)
         super().index(corpusreader)
-        self.build_idf()
 
     def addTokensToIndex(self, tokens):
 
@@ -94,6 +91,9 @@ class BM25_Indexer(Indexer):
             bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
         return [self.idMap[docid] for docid, score in bestDocs]
+    
+    def calcScore(self, idf, score):
+        return idf * score
         
 
 if __name__ == "__main__":
