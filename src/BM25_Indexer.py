@@ -15,8 +15,8 @@ process = psutil.Process(os.getpid())
 
 class BM25_Indexer(Indexer):
 
-    def __init__(self,tokenizer, outputFile, k1=1.2, b=0.75):
-        super().__init__(tokenizer, outputFile)
+    def __init__(self,tokenizer, indexFolder, k1=1.2, b=0.75):
+        super().__init__(tokenizer, indexFolder)
         self.k1 = k1
         self.b = b
         self.avdl = 0

@@ -16,8 +16,8 @@ process = psutil.Process(os.getpid())
 
 class Tf_idf_Indexer(Indexer):
 
-    def __init__(self, tokenizer, outputFile):
-        super().__init__(tokenizer, outputFile)
+    def __init__(self, tokenizer, indexFolder):
+        super().__init__(tokenizer, indexFolder)
 
 
     def index(self,corpusreader):

@@ -59,7 +59,7 @@ class Block_Reader():
             term = l[0].split(":")[0]
             idf = float(l[0].split(":")[1])
 
-            postingList = line[len(l[0]):]  #keep str format
+            postingList = line[len(l[0]) + 1:-1]  #keep str format, dont read term, idf and ;char, remove \n
 
             self.indexList.append( (term, [idf, postingList]) )
     

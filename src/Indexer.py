@@ -248,28 +248,25 @@ class Indexer():
 
 
 
-    def read_file(self, file="../Index.txt", size=-1):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
+    def read_Index(self, file="../Index.txt"):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
+        
         print("Reading {}".format(file))
-        try:
-            f = open(file)
-        except FileNotFoundError:
-            print('File {} was not found'.format(file))
-            return
+        
+        f = open(file)
 
-        self.invertedindex = {}
-        readLines = 0
+        #self.invertedindex = {}
         while True:
             line = f.readline()  # ler linha a linha
-            readLines += 1
 
-            if not line or (readLines >= size != -1):
+            if not line:
                 break
 
             # formato de cada linha:
             # term:idf ; doc_id:term_weight:pos1,pos2,pos3... ; doc_id:term_weight:pos1,pos2,pos3 ; ...
             line = line.split(";")
-            term = line[0].split(":")[0]
-            idf = float(line[0].split(":")[1])
+            info = line[0].split(":")
+            term = info[0]
+            idf = float(info[1])
 
             postingList = [Posting(
                 docID=int(values.split(":")[0]),  # doc_id
@@ -280,7 +277,6 @@ class Indexer():
             self.invertedIndex[term] = [idf, postingList]
 
         f.close()
-        print("Index created from file {}".format(file))
 
     
     def loadIndex(self):
@@ -294,7 +290,7 @@ class Indexer():
                 self.ranges.append((wordrange[0], wordrange[1]))
 
     
-    def proximityScore(self, index, doc_scores):
+    def proximityBoost(self, index, doc_scores, dmax=4, numberOfTermsWeight=0.8, distanceWeight=0.2 ):
 
         postList = [Posting_Iterator(term, info[1]) for term, info in index.items() ]
 
@@ -302,7 +298,6 @@ class Indexer():
 
         currDoc = min(doc_scores.keys())
         currScore = 0.5
-
         while True:
             
             postings = [p for p in postList if p.getPosting() != None]    #list of next postings for each term
@@ -318,43 +313,43 @@ class Indexer():
             if smallestPosition[0] != currDoc:  #changed doc
                 doc_scores[currDoc] *= currScore
                 currDoc = smallestPosition[0]
-                currScore = 0.1
+                currScore = 0.5
 
             documentPositions = sorted([pos.getPosting()[1] for pos in postings if pos.getPosting()[0]==smallestPosition[0]])
 
             for n in range(len(documentPositions), 1, -1):  #check best score possible for all words, words-1, -2, ... until only 2 words
                 
-                ntermScore = n * 0.5 / nterms       #0.5 is the max to get if all terms are present
-
                 lastpos = documentPositions[n-1]
                 firstpos = documentPositions[0]
                 distance = lastpos - firstpos
 
-                if distance > n * 4:    #4 chars distance max
-                    distanceScore = 0
-                else:
-                    m = 0.5 / -3*n          #line, when d = n, score = 0.5      when d >= 4n, score = 0
-                    x = distance - n            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
-                    distanceScore = m * x + 0.5
+                if distance > (n-1) * dmax:    #words are not close
+                    continue
+                
+                m = distanceWeight / (-(dmax-1) * (n-1))         #line, when d = n, score = 0.5      when d >= 4n, score = 0
+                x = distance - (n-1)            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
+                distanceScore = m * x + distanceWeight
 
-                distanceScore = distance * 0.5 / n
+                ntermScore = n * numberOfTermsWeight / nterms       #0.5 is the max to get if all terms are present
 
                 totalscore = ntermScore + distanceScore
 
                 if totalscore > currScore:
                     currScore = totalscore
 
+                    '''print("number of terms in query: ", nterms)
+                    print("number of terms Considered: ", n)
+                    print("positions: ", documentPositions)
+                    print("distance: ", distance)
+                    print("x: ", x)                
+                    print("ntermScore: ", ntermScore)
+                    print("distanceScore: ", distanceScore)
+                    print("totalScore: ", totalscore)
+                    print("---------------")'''
 
             smallestPost.increment()
         
-
-
-
-    def areNextToEachOther(self, postingInfo1, postingInfo2):
-        if postingInfo1[0] == postingInfo2[0]:    #same doc
-            if 0 != abs(postingInfo1[1] - postingInfo2[1]) < 5:
-                return True
-        return False
+        return doc_scores
 
     
     def score(self, query, ndocs=None, proxBoost = True): #defined in children
@@ -365,7 +360,8 @@ class Indexer():
 
         #Check for words in index in memory
         flag = False
-        for term in queryTokens:
+        for term in set(queryTokens):
+
             if self.currentRange[0] <= term <= self.currentRange[1]:    #if term can be in Index
                 if term in self.invertedIndex:
                     smallIndex[term] = self.invertedIndex[term]
@@ -380,7 +376,7 @@ class Indexer():
                 for wordRange in self.ranges:
                     if wordRange[0] <= term <= wordRange[1]:        #find new index
                         self.invertedIndex = {}
-                        self.read_file(self.indexFolder + wordRange[0] + "_" + wordRange[1] + ".txt")
+                        self.read_Index(self.indexFolder + wordRange[0] + "_" + wordRange[1] + ".txt")
                         self.currentRange = wordRange
                         break
                     
@@ -389,20 +385,20 @@ class Indexer():
             
             flag = False
         
+        #CALC SCORE
         doc_scores = self.calcScore(smallIndex)
 
+        #APPLY PROX BOOST
         if proxBoost and len(smallIndex.keys()) > 1:
-
-
-
-
-
-                
+            doc_scores =  self.proximityBoost(smallIndex, doc_scores)
         
+        #number of docs to return
+        if ndocs == None:
+            bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
+        else:
+            bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
-
-
-
+        return [self.idMap[docid] for docid, score in bestDocs]
 
 
 if __name__ == "__main__":

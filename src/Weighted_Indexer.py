@@ -4,13 +4,15 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tokenizer")
-parser.add_argument("-c", type=str, default="../metadata_2020-03-27.csv", help="Corpus file")
-parser.add_argument("-l", type=str, help="Load Inverted Index")
+parser.add_argument("-c", type=str, default=None, help="Corpus file")
 parser.add_argument("-i", type=str, choices=['bm25', 'tfidf'], required=True, help="Indexer")
-parser.add_argument("-out", default="../model/", type=str, help="Output folder to save Inverted Index")
+parser.add_argument("-f", default="../model/", type=str, help="Index folder")
 parser.add_argument("-relevant", type=str, default="../queries.relevance.filtered.txt",
                     help="file with the relevant query result")
 parser.add_argument("--query", action="store_true", help="Process Queries")
+parser.add_argument("--proxBoost", action="store_true", help="Apply proximity Boost")
+
+
 args = parser.parse_args()
 
 
@@ -174,19 +176,13 @@ else:
 # INDEXER
 if args.i == 'bm25':
     from BM25_Indexer import BM25_Indexer
-    indexer = BM25_Indexer(tokenizer, args.out)
+    indexer = BM25_Indexer(tokenizer, args.f)
 else:
     from Tf_Idf_Indexer import Tf_idf_Indexer
-    indexer = Tf_idf_Indexer(tokenizer, args.out)
+    indexer = Tf_idf_Indexer(tokenizer, args.f)
 
-# INV_INDEX
-if args.l is not None:  # LOAD INV IND FROM FILE
-    t1 = time.time()
-    indexer.read_file(args.l)
-    t2 = time.time()
-    print('Loading Time: ', t2 - t1)
 
-else:  # BUILD INV IND FROM CORPUS
+if args.c != None:  # BUILD INV IND FROM CORPUS
     from Corpus import CorpusReader
 
     corpusreader = CorpusReader(args.c)
@@ -197,6 +193,9 @@ else:  # BUILD INV IND FROM CORPUS
 
 # PROCESS QUERIES
 if args.query:
+
+    indexer.loadIndex() # LOAD INV IND FROM FOLDER
+
     import xml.etree.ElementTree as ET
 
     root = ET.parse('../queries.txt.xml').getroot()
@@ -210,7 +209,7 @@ if args.query:
             query = entrie.find('query').text
 
             start_time = time.time()
-            retrieved_docs = indexer.proximityScore(query, size)
+            retrieved_docs = indexer.score(query, ndocs=size, proxBoost=args.proxBoost)
             stop_time = time.time()
 
             if size == 50:
