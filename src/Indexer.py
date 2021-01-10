@@ -17,27 +17,18 @@ process = psutil.Process(os.getpid())
 
 
 class Indexer():
-    def __init__(self, tokenizer, outputFolder):
+    def __init__(self, tokenizer, indexFolder):
         self.tokenizer = tokenizer
         self.idMap = {}
         self.invertedIndex = {}
         self.docID = 0
         self.blocks = 0
-        self.outputFolder = outputFolder
-        self.blocksFolder = outputFolder + "Blocks/"
-        self.idMapFile = outputFolder + "idMap.pickle"
-
-        if os.path.exists(self.outputFolder):
-            rmtree(self.outputFolder)
-        
-        print("Creating {} folder".format(self.outputFolder))
-        print("Creating {} folder".format(self.blocksFolder))
-        os.makedirs(self.outputFolder)
-        os.makedirs(self.blocksFolder)
-        
-        print("Creating {} file".format(self.idMapFile))
-        with open(self.idMapFile, 'wb') as f:
-            pickle.dump({}, f)
+        self.indexFolder = indexFolder
+        self.blocksFolder = indexFolder + "Blocks/"
+        self.idMapFile = indexFolder + "idMap.pickle"
+        self.ranges = []
+        self.currentRange =  ("", "")
+    
 
     def hasEnoughMemory(self):
         #print(process.memory_info().rss)
@@ -93,10 +84,25 @@ class Indexer():
             valList[0] = log10(self.docID/valList[0])
 
     def index(self, CorpusReader):
+
+        #Preparation
         print("Indexing...")
+
+        if os.path.exists(self.indexFolder):
+            rmtree(self.indexFolder)
+        
+        print("Creating {} folder".format(self.indexFolder))
+        print("Creating {} folder".format(self.blocksFolder))
+        os.makedirs(self.indexFolder)
+        os.makedirs(self.blocksFolder)
+        
+        print("Creating {} file".format(self.idMapFile))
+        with open(self.idMapFile, 'wb') as f:
+            pickle.dump({}, f)
+
+        #Indexing
         count = 0
         flag = True
-
         while True:
 
             if self.hasEnoughMemory():
@@ -122,7 +128,7 @@ class Indexer():
         if flag:
             #only 1 block, write directly to outputfile
             self.build_idf()
-            self.write_to_file(self.outputFolder + "000-zzz.txt")
+            self.write_to_file(self.indexFolder + "000_zzz.txt")
             self.writeIDMap()
 
         else:
@@ -183,7 +189,7 @@ class Indexer():
 
                 if self.blocks == 0:
                     currentFile.close()
-                    os.rename(self.outputFolder + firstWord + ".txt", self.outputFolder + firstWord + "_" + lastWord + ".txt")
+                    os.rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
                     print("Finished Merging")
                     return
             
@@ -191,7 +197,7 @@ class Indexer():
 
             if currentFile is None: #create file with 1st term
                 firstWord = nextword
-                currentFile = open(self.outputFolder + firstWord + ".txt", "w")
+                currentFile = open(self.indexFolder + firstWord + ".txt", "w")
 
 
             #GET INFO FOR THE GIVEN TERM FROM ALL BLOCKS
@@ -211,7 +217,7 @@ class Indexer():
 
             if currentFile.tell() > optiFileSize:           #good size, close file
                 currentFile.close()
-                os.rename(self.outputFolder + firstWord + ".txt", self.outputFolder + firstWord + "_" + lastWord + ".txt")
+                os.rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
                 currentFile = None
 
 
@@ -276,67 +282,72 @@ class Indexer():
         f.close()
         print("Index created from file {}".format(file))
 
-        # LOAD IDMAP
-        print("Reading idMap from {}".format(self.idMapFile))
-        self.loadIDMap()
     
-    def proximityScore(self, query, ndocs=None):
-        queryTokens = self.tokenizer.process(query)
+    def loadIndex(self):
+        self.loadIDMap()
 
-        if len(queryTokens) == 1:
-            return self.score(query, ndocs)
+        for filename in os.listdir(self.indexFolder):
+            if filename.endswith(".txt"): 
+                filename = filename[:-4]
+                wordrange = filename.split('_')
 
-        postList = [Posting_Iterator(term, self.invertedIndex[term]) for term in queryTokens if term in self.invertedIndex]
-        toRemove = []
+                self.ranges.append((wordrange[0], wordrange[1]))
 
-        docScores = {}
+    
+    def proximityScore(self, index, doc_scores):
+
+        postList = [Posting_Iterator(term, info[1]) for term, info in index.items() ]
+
+        nterms = len(index.keys())
+
+        currDoc = min(doc_scores.keys())
+        currScore = 0.5
+
         while True:
             
-            #Get next Posting
-            smallestPost = None
-            for p in postList:
-                postingInfo = p.getPosting()
+            postings = [p for p in postList if p.getPosting() != None]    #list of next postings for each term
 
-                if postingInfo == None: #if postingList got to the end
-                    toRemove.append(p)
-                    continue
-                
-                if smallestPost == None or postingInfo < smallestPost.getPosting(): #get next posting: compare docID, then position
-                    smallestPost = p
-            
-
-            #remove postings that got to the end
-            if len(toRemove) != 0:
-                for p in toRemove:
-                    postList.remove(p)
-                toRemove = []
-            if len(postList) < 2:
+            if len(postings) == 0:
+                doc_scores[currDoc] *= currScore
                 break
-
-
-            #iterate over the postings
-            for p in postList:
-
-                if self.areNextToEachOther(smallestPost.getPosting(), p.getPosting()):
-                    
-                    #Account for postings
-                    score = self.getScore(smallestPost) + self.getScore(p) 
-                    if score != 0:
-                        doc = smallestPost.getPosting()[0]
-
-                        if doc in docScores:
-                            docScores[doc] += score
-                        else:
-                            docScores[doc] = score
             
+
+            smallestPost = heapq.nsmallest(1, postings, key=lambda item: item.getPosting())[0]
+            smallestPosition = smallestPost.getPosting()
+
+            if smallestPosition[0] != currDoc:  #changed doc
+                doc_scores[currDoc] *= currScore
+                currDoc = smallestPosition[0]
+                currScore = 0.1
+
+            documentPositions = sorted([pos.getPosting()[1] for pos in postings if pos.getPosting()[0]==smallestPosition[0]])
+
+            for n in range(len(documentPositions), 1, -1):  #check best score possible for all words, words-1, -2, ... until only 2 words
+                
+                ntermScore = n * 0.5 / nterms       #0.5 is the max to get if all terms are present
+
+                lastpos = documentPositions[n-1]
+                firstpos = documentPositions[0]
+                distance = lastpos - firstpos
+
+                if distance > n * 4:    #4 chars distance max
+                    distanceScore = 0
+                else:
+                    m = 0.5 / -3*n          #line, when d = n, score = 0.5      when d >= 4n, score = 0
+                    x = distance - n            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
+                    distanceScore = m * x + 0.5
+
+                distanceScore = distance * 0.5 / n
+
+                totalscore = ntermScore + distanceScore
+
+                if totalscore > currScore:
+                    currScore = totalscore
+
+
             smallestPost.increment()
         
-        if ndocs == None:
-            bestDocs = sorted(docScores.items(), key=lambda item: item[1], reverse=True)
-        else:
-            bestDocs = heapq.nlargest(ndocs, docScores.items(), key=lambda item: item[1])
 
-        return [self.idMap[docid] for docid, score in bestDocs]
 
 
     def areNextToEachOther(self, postingInfo1, postingInfo2):
@@ -345,17 +356,48 @@ class Indexer():
                 return True
         return False
 
-    def getScore(self, p):
-        if p.isAccounted():
-            return 0
-        
-        p.setAccounted()
-        return self.calcScore(p.idf, p.getScore())
     
-    def calcScore(self, idf, score):    #defined in children
-        pass
-    def score(self, query, ndocs=None): #defined in children
-        pass
+    def score(self, query, ndocs=None, proxBoost = True): #defined in children
+
+        queryTokens = sorted(self.tokenizer.process(query))
+        tokens =  set(queryTokens[:])
+        smallIndex = {}
+
+        #Check for words in index in memory
+        flag = False
+        for term in queryTokens:
+            if self.currentRange[0] <= term <= self.currentRange[1]:    #if term can be in Index
+                if term in self.invertedIndex:
+                    smallIndex[term] = self.invertedIndex[term]
+                flag = True
+                tokens.remove(term)
+            else:           
+                if flag:    #term out of range
+                    break
+        
+        for term in tokens: #for the rest of the tokens
+            if not (self.currentRange[0] <= term <= self.currentRange[1]) : #if cant be in Index
+                for wordRange in self.ranges:
+                    if wordRange[0] <= term <= wordRange[1]:        #find new index
+                        self.invertedIndex = {}
+                        self.read_file(self.indexFolder + wordRange[0] + "_" + wordRange[1] + ".txt")
+                        self.currentRange = wordRange
+                        break
+                    
+            if term in self.invertedIndex:      #if could find index before see if is there. If couldnt find index before will return false
+                smallIndex[term] = self.invertedIndex[term]
+            
+            flag = False
+        
+        doc_scores = self.calcScore(smallIndex)
+
+        if proxBoost and len(smallIndex.keys()) > 1:
+
+
+
+
+
+                
         
 
 

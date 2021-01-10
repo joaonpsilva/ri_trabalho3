@@ -66,17 +66,13 @@ class BM25_Indexer(Indexer):
                 self.invertedIndex[token][0] += 1    
 
 
-    def score(self, query, ndocs=None):
-        queryTokens = self.tokenizer.process(query)
+    def calcScore(self, index):
         
         doc_scores = {}
-        for term in queryTokens:
+        for term, info in index.items():
 
-            if term not in self.invertedIndex:
-                continue
-
-            idf = self.invertedIndex[term][0]
-            for doc in self.invertedIndex[term][1]:
+            idf = info[0]
+            for doc in info[1]:
 
                 score = idf * doc.score 
 
@@ -84,16 +80,15 @@ class BM25_Indexer(Indexer):
                     doc_scores[doc.docID] += score
                 else:
                     doc_scores[doc.docID] = score
-
+        '''
         if ndocs == None:
             bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
         else:
             bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
-        return [self.idMap[docid] for docid, score in bestDocs]
-    
-    def calcScore(self, idf, score):
-        return idf * score
+        return [self.idMap[docid] for docid, score in bestDocs]'''
+        return doc_scores
+
         
 
 if __name__ == "__main__":
