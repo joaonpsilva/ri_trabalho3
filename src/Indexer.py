@@ -12,7 +12,7 @@ from Block_Reader import Block_Reader
 from math import log10
 from Posting_Iterator import Posting_Iterator
 from shutil import rmtree
-
+from RangeIndex import RangeIndex
 process = psutil.Process(os.getpid())
 
 
@@ -26,8 +26,7 @@ class Indexer():
         self.indexFolder = indexFolder
         self.blocksFolder = indexFolder + "Blocks/"
         self.idMapFile = indexFolder + "idMap.pickle"
-        self.ranges = []
-        self.currentRange =  ("", "")
+        self.finalIndexes = []
     
 
     def hasEnoughMemory(self):
@@ -125,16 +124,16 @@ class Indexer():
                 self.dumpBlock()
                 flag = False
 
-        if flag:
+        #if flag:
             #only 1 block, write directly to outputfile
-            self.build_idf()
-            self.write_to_file(self.indexFolder + "000_zzz.txt")
-            self.writeIDMap()
+            #self.build_idf()
+            #self.write_to_file(self.indexFolder + "000_zzz.txt")
+            #self.writeIDMap()
 
-        else:
-            self.dumpBlock()
+       # else:
+        self.dumpBlock()
             #MERGE INDEXES
-            self.mergeBlocks()
+        self.mergeBlocks()
         
         os.rmdir(self.blocksFolder)
 
@@ -152,7 +151,7 @@ class Indexer():
         print("Merging Indexes")
 
         block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(self.blocks)]
-        optiFileSize = os.path.getsize(self.blocksFolder + "0Block.txt") - 1000 #-1000 for good mesure 
+        optiFileSize = 30000000     #30mb
         
         #MERGE INDEXES
         flag = False
@@ -246,48 +245,16 @@ class Indexer():
         print("Done writting to {}".format(file))
         f.close()
 
-
-
-    def read_Index(self, file="../Index.txt"):  # size => numero de linhas que se quer ler, -1 -> ler ficheiro tudo
-        
-        print("Reading {}".format(file))
-        
-        f = open(file)
-
-        #self.invertedindex = {}
-        while True:
-            line = f.readline()  # ler linha a linha
-
-            if not line:
-                break
-
-            # formato de cada linha:
-            # term:idf ; doc_id:term_weight:pos1,pos2,pos3... ; doc_id:term_weight:pos1,pos2,pos3 ; ...
-            line = line.split(";")
-            info = line[0].split(":")
-            term = info[0]
-            idf = float(info[1])
-
-            postingList = [Posting(
-                docID=int(values.split(":")[0]),  # doc_id
-                score=float(values.split(":")[1]),  # term_weight
-                positions=[int(position) for position in values.split(":")[2].split(",")])  # pos1,pos2,pos3...
-                for values in line[1:]]  # values = [doc_id:term_weight:pos1,pos2 , doc_id:term_weight:pos1,pos2]
-
-            self.invertedIndex[term] = [idf, postingList]
-
-        f.close()
-
     
     def loadIndex(self):
         self.loadIDMap()
 
-        for filename in os.listdir(self.indexFolder):
-            if filename.endswith(".txt"): 
-                filename = filename[:-4]
-                wordrange = filename.split('_')
+        files = sorted([filename for filename in os.listdir(self.indexFolder) if filename.endswith(".txt")])
+        for filename in files:
+            fileRange = filename[:-4]
+            wordrange = fileRange.split('_')
 
-                self.ranges.append((wordrange[0], wordrange[1]))
+            self.finalIndexes.append(RangeIndex(self.indexFolder + filename, wordrange[0], wordrange[1]))
 
     
     def proximityBoost(self, index, doc_scores, dmax=4, numberOfTermsWeight=0.8, distanceWeight=0.2 ):
@@ -354,36 +321,36 @@ class Indexer():
     
     def score(self, query, ndocs=None, proxBoost = True): #defined in children
 
-        queryTokens = sorted(self.tokenizer.process(query))
-        tokens =  set(queryTokens[:])
+        queryTokens = self.tokenizer.process(query)
+        i = 0
         smallIndex = {}
 
-        #Check for words in index in memory
-        flag = False
-        for term in set(queryTokens):
+        for term in sorted(set(queryTokens)):
 
-            if self.currentRange[0] <= term <= self.currentRange[1]:    #if term can be in Index
-                if term in self.invertedIndex:
-                    smallIndex[term] = self.invertedIndex[term]
-                flag = True
-                tokens.remove(term)
-            else:           
-                if flag:    #term out of range
-                    break
-        
-        for term in tokens: #for the rest of the tokens
-            if not (self.currentRange[0] <= term <= self.currentRange[1]) : #if cant be in Index
-                for wordRange in self.ranges:
-                    if wordRange[0] <= term <= wordRange[1]:        #find new index
-                        self.invertedIndex = {}
-                        self.read_Index(self.indexFolder + wordRange[0] + "_" + wordRange[1] + ".txt")
-                        self.currentRange = wordRange
-                        break
+            while True:
+                invInd = self.finalIndexes[i]
+                isHere = invInd.belongs(term)
+
+                if isHere == 0:     #right range
+                    if not invInd.isloaded(): #if index is not in memory
+                        if not self.hasEnoughMemory():
+                            self.discardIndexes()
+                        invInd.read_Index()
                     
-            if term in self.invertedIndex:      #if could find index before see if is there. If couldnt find index before will return false
-                smallIndex[term] = self.invertedIndex[term]
-            
-            flag = False
+                    
+                    if invInd.termInIndex(term):    #index has term
+                        smallIndex[term] = invInd.getPostingList(term) 
+                    break   #done, next word
+
+                elif isHere == 1:   #term to big, maybe next index
+                    i+= 1
+                    if i == len(self.finalIndexes): #it was last index, term not indexed
+                        break
+                
+
+                elif isHere == 2:   #term to small, not indexed
+                    break
+                
         
         #CALC SCORE
         doc_scores = self.calcScore(smallIndex)
@@ -399,6 +366,14 @@ class Indexer():
             bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
         return [self.idMap[docid] for docid, score in bestDocs]
+
+    def discardIndexes(self):
+
+        loadedIndexes = sorted([ind for ind in self.finalIndexes if ind.isloaded()], key=lambda item: item.used)  #get indexes in memory from least used
+        i = 0
+        while not self.hasEnoughMemory: #discard indexes until has enough memory
+            loadedIndexes[i].clean()
+            i+= 1
 
 
 if __name__ == "__main__":
