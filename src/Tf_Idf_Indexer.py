@@ -50,15 +50,12 @@ class Tf_idf_Indexer(Indexer):
                 self.invertedIndex[token][1].append(posting)
                 self.invertedIndex[token][0] += 1
 
-    def score(self, query, ndocs=None):
-        queryTokens = collections.Counter(self.tokenizer.process(query)).most_common()  # [(token, occur)]
+    def calcScore(self, index, queryTokenss):
+        queryTokens = collections.Counter(queryTokenss).most_common()  # [(token, occur)]
 
-        for t in queryTokens:  # remove terms that are not indexed
-            if t[0] not in self.invertedIndex:
-                queryTokens.remove(t)
 
-        query_weights = {term: ((1 + log10(occur)) * self.invertedIndex[term][0])
-                         for term, occur in queryTokens}
+        query_weights = {term: ((1 + log10(occur)) * index[term][0])
+                         for term, occur in queryTokens if term in index}
 
         query_length = sqrt(sum([score ** 2 for score in query_weights.values()]))
 
@@ -66,21 +63,13 @@ class Tf_idf_Indexer(Indexer):
         for term, termScore in query_weights.items():
             termScore /= query_length
 
-            for doc in self.invertedIndex[term][1]:
+            for doc in index[term][1]:
                 if doc.docID in doc_scores:
                     doc_scores[doc.docID] += doc.score * termScore
                 else:
-                    doc_scores[doc.docID] = doc.score * termScore
-
-        if ndocs == None:
-            bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
-        else:
-            bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])        
+                    doc_scores[doc.docID] = doc.score * termScore  
         
-        return [self.idMap[docid] for docid, score in bestDocs]
-    
-    def calcScore(self, idf, score):
-        return idf * score
+        return doc_scores
 
 
 if __name__ == "__main__":

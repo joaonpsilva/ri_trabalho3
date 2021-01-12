@@ -83,9 +83,6 @@ class Indexer():
                     self.invertedIndex[word][1].append(self.docID)
                     self.invertedIndex[word][0] += 1
     
-    def build_idf(self):
-        for term, valList in self.invertedIndex.items():
-            valList[0] = log10(self.docID/valList[0])
 
     def index(self, CorpusReader):
 
@@ -106,7 +103,6 @@ class Indexer():
 
         #Indexing
         count = 0
-        flag = True
         while True:
 
             if self.hasEnoughMemory():
@@ -127,17 +123,11 @@ class Indexer():
             else:
                 #No space available, save block
                 self.dumpBlock()
-                flag = False
 
-        #if flag:
-            #only 1 block, write directly to outputfile
-            #self.build_idf()
-            #self.write_to_file(self.indexFolder + "000_zzz.txt")
-            #self.writeIDMap()
+        if self.invertedIndex != {}:
+            self.dumpBlock()
 
-       # else:
-        self.dumpBlock()
-            #MERGE INDEXES
+        #MERGE INDEXES
         self.mergeBlocks()
         
         rmdir(self.blocksFolder)
@@ -358,7 +348,7 @@ class Indexer():
                 
         
         #CALC SCORE
-        doc_scores = self.calcScore(smallIndex)
+        doc_scores = self.calcScore(smallIndex, queryTokens)
 
         #APPLY PROX BOOST
         if proxBoost and len(smallIndex.keys()) > 1:

@@ -61,7 +61,7 @@ class BM25_Indexer(Indexer):
                 self.invertedIndex[token][0] += 1    
 
 
-    def calcScore(self, index):
+    def calcScore(self, index, queryTokenss):
         
         doc_scores = {}
         for term, info in index.items():
@@ -75,13 +75,7 @@ class BM25_Indexer(Indexer):
                     doc_scores[doc.docID] += score
                 else:
                     doc_scores[doc.docID] = score
-        '''
-        if ndocs == None:
-            bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
-        else:
-            bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
-        return [self.idMap[docid] for docid, score in bestDocs]'''
         return doc_scores
 
         
