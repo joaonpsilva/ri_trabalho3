@@ -2,18 +2,18 @@ from Corpus import CorpusReader
 from Tokenizer1 import Tokenizer1
 from Tokenizer2 import Tokenizer2
 from Posting import Posting
-import time
-import heapq
-import argparse
-import os
-import psutil
-import pickle
+from time import time
+from heapq import nsmallest, nlargest
+from os import path, makedirs, getpid, rmdir, rename, remove, listdir
+from psutil import Process, virtual_memory
+from pickle import load, dump
 from Block_Reader import Block_Reader
 from math import log10
 from Posting_Iterator import Posting_Iterator
 from shutil import rmtree
 from RangeIndex import RangeIndex
-process = psutil.Process(os.getpid())
+from resource import getrlimit, RLIMIT_AS
+process = Process(getpid())
 
 
 class Indexer():
@@ -30,23 +30,28 @@ class Indexer():
     
 
     def hasEnoughMemory(self):
-        #print(process.memory_info().rss)
-        return process.memory_info().rss < 3000000000   #4 GB
+        lim = getrlimit(RLIMIT_AS)[0]
+        if lim == -1:
+            lim = virtual_memory().available
+        free = lim - process.memory_info().rss
+        #print(free)
+        return free > 1000000000
+
 
     def loadIDMap(self):
         with open(self.idMapFile, 'rb') as f:
-            self.idMap = pickle.load(f)
+            self.idMap = load(f)
     
     def writeIDMap(self):
         print("Updating IdMapFile")
        
         with open(self.idMapFile, 'rb') as f:
-            content = pickle.load(f)
+            content = load(f)
         
         self.idMap.update(content)
 
         with open(self.idMapFile, 'wb') as f:
-            pickle.dump(self.idMap, f)
+            dump(self.idMap, f)
 
     def extractDocData(self, tokens):
         # count occurs and positions
@@ -87,17 +92,17 @@ class Indexer():
         #Preparation
         print("Indexing...")
 
-        if os.path.exists(self.indexFolder):
+        if path.exists(self.indexFolder):
             rmtree(self.indexFolder)
         
-        print("Creating {} folder".format(self.indexFolder))
-        print("Creating {} folder".format(self.blocksFolder))
-        os.makedirs(self.indexFolder)
-        os.makedirs(self.blocksFolder)
+        print("Created {} folder".format(self.indexFolder))
+        print("Created {} folder".format(self.blocksFolder))
+        makedirs(self.indexFolder)
+        makedirs(self.blocksFolder)
         
-        print("Creating {} file".format(self.idMapFile))
+        print("Created {} file".format(self.idMapFile))
         with open(self.idMapFile, 'wb') as f:
-            pickle.dump({}, f)
+            dump({}, f)
 
         #Indexing
         count = 0
@@ -135,7 +140,7 @@ class Indexer():
             #MERGE INDEXES
         self.mergeBlocks()
         
-        os.rmdir(self.blocksFolder)
+        rmdir(self.blocksFolder)
 
     def dumpBlock(self):
         self.write_to_file(self.blocksFolder + str(self.blocks) + "Block.txt")
@@ -188,7 +193,7 @@ class Indexer():
 
                 if self.blocks == 0:
                     currentFile.close()
-                    os.rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
+                    rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
                     print("Finished Merging")
                     return
             
@@ -216,7 +221,7 @@ class Indexer():
 
             if currentFile.tell() > optiFileSize:           #good size, close file
                 currentFile.close()
-                os.rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
+                rename(self.indexFolder + firstWord + ".txt", self.indexFolder + firstWord + "_" + lastWord + ".txt")
                 currentFile = None
 
 
@@ -225,7 +230,7 @@ class Indexer():
         print("Writing to {}".format(file))
         # Apagar o ficheiro caso ele exista
         try:
-            os.remove(file)
+            remove(file)
         except OSError:
             pass
 
@@ -249,7 +254,7 @@ class Indexer():
     def loadIndex(self):
         self.loadIDMap()
 
-        files = sorted([filename for filename in os.listdir(self.indexFolder) if filename.endswith(".txt")])
+        files = sorted([filename for filename in listdir(self.indexFolder) if filename.endswith(".txt")])
         for filename in files:
             fileRange = filename[:-4]
             wordrange = fileRange.split('_')
@@ -274,7 +279,7 @@ class Indexer():
                 break
             
 
-            smallestPost = heapq.nsmallest(1, postings, key=lambda item: item.getPosting())[0]
+            smallestPost = nsmallest(1, postings, key=lambda item: item.getPosting())[0]
             smallestPosition = smallestPost.getPosting()
 
             if smallestPosition[0] != currDoc:  #changed doc
@@ -363,20 +368,20 @@ class Indexer():
         if ndocs == None:
             bestDocs = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
         else:
-            bestDocs = heapq.nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
+            bestDocs = nlargest(ndocs, doc_scores.items(), key=lambda item: item[1])
 
         return [self.idMap[docid] for docid, score in bestDocs]
 
     def discardIndexes(self):
-
         loadedIndexes = sorted([ind for ind in self.finalIndexes if ind.isloaded()], key=lambda item: item.used)  #get indexes in memory from least used
         i = 0
-        while not self.hasEnoughMemory: #discard indexes until has enough memory
+        while not self.hasEnoughMemory(): #discard indexes until has enough memory
             loadedIndexes[i].clean()
             i+= 1
 
 
 if __name__ == "__main__":
+    import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-tokenizer", type=int, choices=[1, 2], required=True, help="tokenizer")
@@ -393,9 +398,9 @@ if __name__ == "__main__":
     indexer = Indexer(tokenizer)
 
     # GET RESULTS
-    t1 = time.time()
+    t1 = time()
     indexer.index(corpusreader)
-    t2 = time.time()
+    t2 = time()
 
     print('seconds: ', t2 - t1)
     print("Total memory used by program: ", process.memory_info().rss)
@@ -403,8 +408,8 @@ if __name__ == "__main__":
     keyList = list(indexer.invertedIndex.keys())
     print('Vocabulary size: ', len(keyList))
 
-    lessUsed = heapq.nsmallest(10, indexer.invertedIndex.items(), key=lambda item: (item[0], item[1][0]))
+    lessUsed = nsmallest(10, indexer.invertedIndex.items(), key=lambda item: (item[0], item[1][0]))
     print("First 10 terms with 1 doc freq: ", [i[0] for i in lessUsed])
 
-    mostUsed = heapq.nlargest(10, indexer.invertedIndex.items(), key=lambda item: item[1][0])
+    mostUsed = nlargest(10, indexer.invertedIndex.items(), key=lambda item: item[1][0])
     print("Higher doc freq: ", [(i[0], i[1][0]) for i in mostUsed])

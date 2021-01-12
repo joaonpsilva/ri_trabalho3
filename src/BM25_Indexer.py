@@ -3,15 +3,10 @@ from Corpus import CorpusReader
 from Tokenizer1 import Tokenizer1
 from Tokenizer2 import Tokenizer2
 from Posting import Posting
-import time
 import heapq
-import argparse
-import os
-import psutil
 from math import log10, sqrt
 import collections
 
-process = psutil.Process(os.getpid())
 
 class BM25_Indexer(Indexer):
 
@@ -92,7 +87,12 @@ class BM25_Indexer(Indexer):
         
 
 if __name__ == "__main__":
-
+    import time
+    import os
+    import psutil
+    import argparse
+    process = psutil.Process(os.getpid())
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tokenizer")
     parser.add_argument("-c", type=str, default="../metadata_2020-03-27.csv", help="Corpus file")

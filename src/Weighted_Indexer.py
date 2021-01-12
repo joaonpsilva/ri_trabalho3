@@ -1,19 +1,28 @@
 import argparse
-import math
 import time
+from resource import getrlimit, RLIMIT_AS, setrlimit
+from math import floor, log2
+
+def memory_limit(x):
+    soft, hard = getrlimit(RLIMIT_AS)
+    setrlimit(RLIMIT_AS, (x, hard))
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-tokenizer", type=int, default=2, choices=[1, 2], help="tokenizer")
 parser.add_argument("-c", type=str, default=None, help="Corpus file")
 parser.add_argument("-i", type=str, choices=['bm25', 'tfidf'], required=True, help="Indexer")
 parser.add_argument("-f", default="../model/", type=str, help="Index folder")
-parser.add_argument("-relevant", type=str, default="../queries.relevance.filtered.txt",
+parser.add_argument("-relevant", type=str, default="../queries.relevance.txt",
                     help="file with the relevant query result")
 parser.add_argument("--query", action="store_true", help="Process Queries")
 parser.add_argument("--proxBoost", action="store_true", help="Apply proximity Boost")
-
+parser.add_argument("-mem", default=None, type=float, help="Memory limit (GB)")
 
 args = parser.parse_args()
+
+if args.mem != None:
+    memory_limit(floor(1073741824 * args.mem))  #gb to bytes
 
 
 # Retorna um dicionario com formato {numero_da_query : [lista de docs relevantes]}
@@ -96,8 +105,8 @@ def calculateNDCG(retrieved_docs, number):
     realDCG = [score_list[0]]
     idealDCG = [perfectNDCG[0]]
     for i in range(1, len(score_list)):
-        realDCG.append(realDCG[i - 1] + (score_list[i] / math.log2(i + 1)))
-        idealDCG.append(idealDCG[i - 1] + (perfectNDCG[i] / math.log2(i + 1)))
+        realDCG.append(realDCG[i - 1] + (score_list[i] / log2(i + 1)))
+        idealDCG.append(idealDCG[i - 1] + (perfectNDCG[i] / log2(i + 1)))
     # print(realDCG)
     # print(idealDCG)
 
