@@ -8,7 +8,7 @@ class Tokenizer2:
     def __init__(self, stopwordsfile='../snowball_stopwords_EN.txt'):
         self.stemmer = Stemmer.Stemmer("english")
         self.stopwords = self.buildStopWords(stopwordsfile)
-        self.regex = re.compile('[^a-zA-Z0-9@\.\' -]')
+        self.regex = re.compile('[^a-zA-Z0-9\' -]')
 
     def buildStopWords(self, file):
         reader = open(file, 'r')
@@ -22,7 +22,7 @@ class Tokenizer2:
 
         for phrase in phrases:
  
-            phrase = self.regex.sub('', phrase)
+            phrase = self.regex.sub(' ', phrase)
             phrase = phrase.lower()
             words = phrase.split(' ')
 
