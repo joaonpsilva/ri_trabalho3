@@ -12,9 +12,8 @@ from math import log10
 from Posting_Iterator import Posting_Iterator
 from shutil import rmtree
 from RangeIndex import RangeIndex
-from resource import getrlimit, RLIMIT_AS
-process = Process(getpid())
 
+process = Process(getpid())
 
 class Indexer():
     def __init__(self, tokenizer, indexFolder):
@@ -27,15 +26,22 @@ class Indexer():
         self.blocksFolder = indexFolder + "Blocks/"
         self.idMapFile = indexFolder + "idMap.pickle"
         self.finalIndexes = []
+        self.memLim = -1
+
+        self.thresh = 1000000000 #around 1 gb to
     
+    def setMemLim(self, l):
+        self.memLim = l
 
     def hasEnoughMemory(self):
-        lim = getrlimit(RLIMIT_AS)[0]
-        if lim == -1:
-            lim = virtual_memory().available
-        free = lim - process.memory_info().rss
-        #print(free)
-        return free > 1000000000
+
+        if self.memLim == -1:
+            free = virtual_memory().available
+        else:
+            free = self.memLim - process.memory_info().rss
+
+        print(free)
+        return free > self.thresh 
 
 
     def loadIDMap(self):
@@ -133,6 +139,10 @@ class Indexer():
         rmdir(self.blocksFolder)
 
     def dumpBlock(self):
+        if self.invertedIndex == {}:
+            self.thresh -= 52428800    #decrease 50mb
+            return
+
         self.write_to_file(self.blocksFolder + str(self.blocks) + "Block.txt")
         self.invertedIndex = {}
 
@@ -249,7 +259,7 @@ class Indexer():
             self.finalIndexes.append(RangeIndex(self.indexFolder + filename, wordrange[0], wordrange[1]))
 
     
-    def proximityBoost(self, index, doc_scores, dmax=4, numberOfTermsWeight=0.8, distanceWeight=0.2 ):
+    def proximityBoost(self, index, doc_scores, dmax=10, numberOfTermsWeight=0.8, distanceWeight=0.2 ):
 
         postList = [Posting_Iterator(term, info[1]) for term, info in index.items() ]
 
@@ -277,19 +287,19 @@ class Indexer():
             documentPositions = sorted([pos.getPosting()[1] for pos in postings if pos.getPosting()[0]==smallestPosition[0]])
 
             for n in range(len(documentPositions), 1, -1):  #check best score possible for all words, words-1, -2, ... until only 2 words
+                ntermScore = n * numberOfTermsWeight / nterms       #nweight is the max to get if all terms are present
                 
                 lastpos = documentPositions[n-1]
                 firstpos = documentPositions[0]
                 distance = lastpos - firstpos
 
                 if distance > (n-1) * dmax:    #words are not close
-                    continue
-                
-                m = distanceWeight / (-(dmax-1) * (n-1))         #line, when d = n, score = 0.5      when d >= 4n, score = 0
-                x = distance - (n-1)            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
-                distanceScore = m * x + distanceWeight
+                    distanceScore = 0
+                else:
+                    m = distanceWeight / (-(dmax-1) * (n-1))         #line, when d = n, score = 0.5      when d >= 4n, score = 0
+                    x = distance - (n-1)            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
+                    distanceScore = m * x + distanceWeight
 
-                ntermScore = n * numberOfTermsWeight / nterms       #0.5 is the max to get if all terms are present
 
                 totalscore = ntermScore + distanceScore
 
@@ -361,11 +371,13 @@ class Indexer():
 
     def discardIndexes(self):
         loadedIndexes = sorted([ind for ind in self.finalIndexes if ind.isloaded()], key=lambda item: item.used)  #get indexes in memory from least used
-        i = 0
-        while not self.hasEnoughMemory(): #discard indexes until has enough memory
-            loadedIndexes[i].clean()
-            i+= 1
 
+        for index in loadedIndexes:
+            index.clean()
+
+            if self.hasEnoughMemory():  #discard indexes until has enough memory
+                return
+                    
 
 if __name__ == "__main__":
     import argparse

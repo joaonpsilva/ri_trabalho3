@@ -1,11 +1,8 @@
 import argparse
 import time
-from resource import getrlimit, RLIMIT_AS, setrlimit
 from math import floor, log2
-
-def memory_limit(x):
-    soft, hard = getrlimit(RLIMIT_AS)
-    setrlimit(RLIMIT_AS, (x, hard))
+from os import getpid
+from psutil import Process, RLIMIT_AS
 
 
 parser = argparse.ArgumentParser()
@@ -18,11 +15,7 @@ parser.add_argument("-relevant", type=str, default="../queries.relevance.txt",
 parser.add_argument("--query", action="store_true", help="Process Queries")
 parser.add_argument("--proxBoost", action="store_true", help="Apply proximity Boost")
 parser.add_argument("-mem", default=None, type=float, help="Memory limit (GB)")
-
 args = parser.parse_args()
-
-if args.mem != None:
-    memory_limit(floor(1073741824 * args.mem))  #gb to bytes
 
 
 # Retorna um dicionario com formato {numero_da_query : [lista de docs relevantes]}
@@ -190,13 +183,23 @@ else:
     from Tf_Idf_Indexer import Tf_idf_Indexer
     indexer = Tf_idf_Indexer(tokenizer, args.f)
 
+#MEMORY LIMIT
+if args.mem != None:    
+    limit = floor(1073741824 * args.mem)
+    process = Process(getpid())
+    process.rlimit(RLIMIT_AS,(limit,limit))
+    indexer.setMemLim(limit)
 
 if args.c != None:  # BUILD INV IND FROM CORPUS
     from Corpus import CorpusReader
 
     corpusreader = CorpusReader(args.c)
     t1 = time.time()
-    indexer.index(corpusreader)
+    try:
+        indexer.index(corpusreader)
+    except MemoryError:
+        print("MEMORY ERROR")
+        exit(0)
     t2 = time.time()
     print('Indexing Time: ', t2 - t1)
 
