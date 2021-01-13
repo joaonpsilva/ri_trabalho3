@@ -40,7 +40,6 @@ class Indexer():
         else:
             free = self.memLim - process.memory_info().rss
 
-        print(free)
         return free > self.thresh 
 
 
