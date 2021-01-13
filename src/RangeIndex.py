@@ -1,4 +1,5 @@
 from Posting import Posting
+from json import loads
 
 class RangeIndex():
 
@@ -49,17 +50,16 @@ class RangeIndex():
             info = line[0].split(":")
             term = info[0]
             idf = float(info[1])
+            
+            postingList=[]
+            for values in line[1:]:
+                postingInfo = values.split(":")
+                postingList.append(Posting(
+                    docID=int(postingInfo[0]), 
+                    score=float(postingInfo[1]), 
+                    positions=loads('[' + postingInfo[2] + ']')))
 
-            postingList = [Posting(
-                docID=int(values.split(":")[0]),  # doc_id
-                score=float(values.split(":")[1]),  # term_weight
-                positions=[int(position) for position in values.split(":")[2].split(",")])  # pos1,pos2,pos3...
-                for values in line[1:]]  # values = [doc_id:term_weight:pos1,pos2 , doc_id:term_weight:pos1,pos2]
 
             self.index[term] = [idf, postingList]
 
         f.close()
-
-    
-    
-
