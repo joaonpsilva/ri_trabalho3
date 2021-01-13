@@ -230,10 +230,7 @@ class Indexer():
         for term, values in sorted(self.invertedIndex.items()):
             string = ('{}:{}'.format(term, values[0]))
             for posting in values[1]:
-                string += (';{}:{}:'.format(posting.docID, posting.score))  # doc_id:term_weight
-                for position in posting.positions:
-                    string += ('{},'.format(position))  # pos1,pos2,pos3,…
-                string = string[:-1]  # remover a virgula final (para ficar bonito)
+                string += ";" + str(posting)
             string += "\n"
             f.write(string)
 

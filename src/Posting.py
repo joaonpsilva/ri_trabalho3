@@ -6,4 +6,4 @@ class Posting:
         self.positions = positions  # list of ints
 
     def __repr__(self):
-        return str(self.docID) + ", " + str(self.score)
+        return str(self.docID) + ":" + str(self.score) + ":" + str(self.positions)[1:-1]
