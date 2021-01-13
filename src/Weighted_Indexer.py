@@ -3,6 +3,7 @@ import time
 from resource import getrlimit, RLIMIT_AS, setrlimit
 from math import floor, log2
 
+
 def memory_limit(x):
     soft, hard = getrlimit(RLIMIT_AS)
     setrlimit(RLIMIT_AS, (x, hard))
@@ -22,7 +23,7 @@ parser.add_argument("-mem", default=None, type=float, help="Memory limit (GB)")
 args = parser.parse_args()
 
 if args.mem != None:
-    memory_limit(floor(1073741824 * args.mem))  #gb to bytes
+    memory_limit(floor(1073741824 * args.mem))  # gb to bytes
 
 
 # Retorna um dicionario com formato {numero_da_query : [lista de docs relevantes]}
@@ -185,11 +186,12 @@ else:
 # INDEXER
 if args.i == 'bm25':
     from BM25_Indexer import BM25_Indexer
+
     indexer = BM25_Indexer(tokenizer, args.f)
 else:
     from Tf_Idf_Indexer import Tf_idf_Indexer
-    indexer = Tf_idf_Indexer(tokenizer, args.f)
 
+    indexer = Tf_idf_Indexer(tokenizer, args.f)
 
 if args.c != None:  # BUILD INV IND FROM CORPUS
     from Corpus import CorpusReader
@@ -203,7 +205,7 @@ if args.c != None:  # BUILD INV IND FROM CORPUS
 # PROCESS QUERIES
 if args.query:
 
-    indexer.loadIndex() # LOAD INV IND FROM FOLDER
+    indexer.loadIndex()  # LOAD INV IND FROM FOLDER
 
     import xml.etree.ElementTree as ET
 
@@ -211,8 +213,59 @@ if args.query:
 
     relevant_docs = getRelevantDocs()  # dicionario com formato {numero_da_query : [lista de docs relevantes]}
 
+    ############################################################################################################
+    # Primeiro calcular para o size 50
+    valores = {}  # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
+    dict_of_docs = {}       # Stores the list of docs returned for each number
+    for entrie in root.findall('topic'):
+        number = entrie.get('number')
+        query = entrie.find('query').text
+
+        start_time = time.time()
+        retrieved_docs = indexer.score(query, ndocs=50, proxBoost=args.proxBoost)
+        dict_of_docs[number] = retrieved_docs
+        stop_time = time.time()
+
+        print(number, ' - ', query)
+        print(retrieved_docs)
+        print("\n")
+        valores[number] = {}  # inicializar o dicionario nested
+
+        valores[number]["latecy"] = (stop_time - start_time)
+        precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+        recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+        valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+        valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+        valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+
+    valores["mean"] = calculateMean(valores)
+    valores50 = dict(valores)
+
+    # Calcular para size 10 e 20
+    valores = {}
+    for size in [10, 20]:
+        for number in dict_of_docs.keys():
+            retrieved_docs = dict_of_docs[number][:size]
+            valores[number] = {}
+
+            valores[number]["latecy"] = 0
+            precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+            recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+            valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+            valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+            valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+        valores["mean"] = calculateMean(valores)
+
+        # Guardar os valores no respetivo dicionario
+        if size == 10:
+            valores10 = dict(valores)  # sem o dict ia copiar a referencia
+        elif size == 20:
+            valores20 = dict(valores)
+
+    #############################################################################################################
+    '''
     for size in [10, 20, 50]:
-        valores={}                       # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
+        valores={}  # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
         for entrie in root.findall('topic'):
             number = entrie.get('number')
             query = entrie.find('query').text
@@ -229,18 +282,11 @@ if args.query:
 
             valores[number]["latecy"] = (stop_time - start_time)
 
-            if len(retrieved_docs) == 0:
-                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
-                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
-                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
-                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
-                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
-            else:
-                precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
-                recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
-                valores[number]["f-measure"] = calculateF_Measure(precision, recall)
-                valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
-                valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
+            precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
+            recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
+            valores[number]["f-measure"] = calculateF_Measure(precision, recall)
+            valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
+            valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
 
         valores["mean"] = calculateMean(valores)
 
@@ -252,8 +298,11 @@ if args.query:
         else:
             valores50 = dict(valores)
 
+    '''
+    #############################################################################################################
     # Print da tabela
     # print(valores)
+
     from prettytable import PrettyTable
 
     for size in [10, 20, 50]:
