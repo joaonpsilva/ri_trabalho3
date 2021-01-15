@@ -214,6 +214,8 @@ if args.query:
 
     relevant_docs = getRelevantDocs()  # dicionario com formato {numero_da_query : [lista de docs relevantes]}
 
+    important_docs = set(open('../cord_uid_2020-07-16.txt', 'r').read().splitlines())
+
     ############################################################################################################
     # Primeiro calcular para o size 50
     valores = {}  # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
@@ -221,14 +223,20 @@ if args.query:
     for entrie in root.findall('topic'):
         number = entrie.get('number')
         query = entrie.find('query').text
+        
+        print("####QUERY####")
+        print(number, ' - ', query)
 
         start_time = time.time()
-        retrieved_docs = indexer.score(query, ndocs=50, proxBoost=args.proxBoost)
-        dict_of_docs[number] = retrieved_docs
+        retrieved_docs_temp = indexer.score(query, ndocs=50, proxBoost=args.proxBoost)
         stop_time = time.time()
 
-        print(number, ' - ', query)
-        print(retrieved_docs)
+        retrieved_docs = [doc for doc in retrieved_docs_temp if doc in important_docs]
+        dict_of_docs[number] = retrieved_docs
+
+        print("\n")
+        print("DOCS:")
+        print(retrieved_docs_temp)
         print("\n")
         valores[number] = {}  # inicializar o dicionario nested
 
@@ -263,46 +271,6 @@ if args.query:
         elif size == 20:
             valores20 = dict(valores)
 
-    #############################################################################################################
-    '''
-    for size in [10, 20, 50]:
-        valores={}  # dicionario de dicionario com formato {numero_da_query : {precision: valor , recall:valor , ...}
-        for entrie in root.findall('topic'):
-            number = entrie.get('number')
-            query = entrie.find('query').text
-
-            start_time = time.time()
-            retrieved_docs = indexer.score(query, ndocs=size, proxBoost=args.proxBoost)
-            stop_time = time.time()
-
-            if size == 50:
-                print(number, ' - ', query)
-                print(retrieved_docs)
-                print("\n")
-            valores[number] = {}  # inicializar o dicionario nested
-
-            valores[number]["latecy"] = (stop_time - start_time)
-
-            precision = valores[number]["precision"] = calculatePrecision(retrieved_docs, relevant_docs[number])
-            recall = valores[number]["recall"] = calculateRecall(retrieved_docs, relevant_docs[number])
-            valores[number]["f-measure"] = calculateF_Measure(precision, recall)
-            valores[number]["average Precision"] = calculateAveragePrecision(retrieved_docs, relevant_docs[number])
-            valores[number]["ndcg"] = calculateNDCG(retrieved_docs, number)
-
-        valores["mean"] = calculateMean(valores)
-
-        # Guardar os valores no respetivo dicionario
-        if size == 10:
-            valores10 = dict(valores)  # sem o dict ia copiar a referencia
-        elif size == 20:
-            valores20 = dict(valores)
-        else:
-            valores50 = dict(valores)
-
-    '''
-    #############################################################################################################
-    # Print da tabela
-    # print(valores)
 
     from prettytable import PrettyTable
 

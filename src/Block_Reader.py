@@ -3,6 +3,7 @@ import os
 import pickle
 
 class Block_Reader():
+    '''Read Block per chunks to feed merging algorithm'''
 
     def __init__(self, filename):
 
@@ -27,7 +28,7 @@ class Block_Reader():
     def increment(self):
         
         if self.i == self.chunk_Size - 1:
-            self.read_chunk(self.chunk_Size)
+            self.read_chunk(self.chunk_Size)    #read next chunk
         else:
             self.i+=1
 

@@ -5,7 +5,6 @@ from Tokenizer2 import Tokenizer2
 from Posting import Posting
 import heapq
 from math import log10, sqrt
-import collections
 
 
 class BM25_Indexer(Indexer):

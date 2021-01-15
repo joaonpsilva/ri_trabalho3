@@ -3,6 +3,12 @@ from json import loads
 
 class RangeIndex():
 
+    '''Map part of the index to a range of words which corresponds to a file in the index folder
+    
+    This way we can delete/load part of the index as desired
+    Keep count of how many times this range of words were queried so that if indexer needs to delete part of the index,
+    it should choose to delete the least used parts'''
+
     def __init__(self, indexFile, begin, end):
         self.indexFile = indexFile
         self.begin = begin

@@ -151,10 +151,13 @@ class Indexer():
         self.blocks += 1
 
     def mergeBlocks(self):
-        
+        '''Merge blocks
+        Keep pointer to each block, choose next word alphabeticly, merge all posting lists from all blocks
+        and write to file.'''
+
         print("Merging Indexes")
 
-        block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(self.blocks)]
+        block_readers = [ Block_Reader(self.blocksFolder + str(i) + "Block.txt") for i in range(self.blocks)]   #block pointers
         optiFileSize = 30000000     #30mb
         
         #MERGE INDEXES
@@ -248,6 +251,9 @@ class Indexer():
 
     
     def loadIndex(self):
+        if not path.exists(self.indexFolder):
+            print("No index in " + self.indexFolder)
+            exit(0)
         self.loadIDMap()
 
         files = sorted([filename for filename in listdir(self.indexFolder) if filename.endswith(".txt")])
@@ -259,10 +265,34 @@ class Indexer():
 
     
     def proximityBoost(self, index, doc_scores, dmax=10, numberOfTermsWeight=0.8, distanceWeight=0.2 ):
+        
+        '''Apply a boost to doc scores according to term proximity
+        
+        the boost is a multiplicative factor < 1 ( if good doc, boost = 1, bad doc, boost = 0.5)
+
+        numberOfTermsWeight and distanceWeight are for trying to understand which boost is better for the doc.
+        ex: 
+            query with 4 terms
+            what is better for document?
+            - 4 terms sparsed across the doc
+            - 3 terms kind of close terms
+            - 2 terms really close terms  
+        '''
+
 
         postList = [Posting_Iterator(term, info[1]) for term, info in index.items() ]
 
         nterms = len(index.keys())
+
+        #for larger queries having a % of the terms close should count more than having all terms sparsed
+        #for small queries having all terms in doc maybe more important than having 2 terms close 
+        if nterms > 3:              
+            x = (nterms - 3) * 0.1
+            if x > 0.5:
+                x = 0.5
+            numberOfTermsWeight -= x
+            distanceWeight += x
+
 
         currDoc = min(doc_scores.keys())
         currScore = 0.5
@@ -279,10 +309,11 @@ class Indexer():
             smallestPosition = smallestPost.getPosting()
 
             if smallestPosition[0] != currDoc:  #changed doc
-                doc_scores[currDoc] *= currScore
+                doc_scores[currDoc] *= currScore    #aplly boost
                 currDoc = smallestPosition[0]
                 currScore = 0.5
 
+            #get all postings of the same doc
             documentPositions = sorted([pos.getPosting()[1] for pos in postings if pos.getPosting()[0]==smallestPosition[0]])
 
             for n in range(len(documentPositions), 1, -1):  #check best score possible for all words, words-1, -2, ... until only 2 words
@@ -299,21 +330,12 @@ class Indexer():
                     x = distance - (n-1)            #line points p1 = (n-n, 0.5), p2 = (4n - n, 0)
                     distanceScore = m * x + distanceWeight
 
-
+                #if all terms are in the interval ntermScore is max, if only a % of terms in interval ntermScore is smaller
+                #if words are close, distanceScore is max, if words are far appart is smaller
                 totalscore = ntermScore + distanceScore
 
                 if totalscore > currScore:
                     currScore = totalscore
-
-                    '''print("number of terms in query: ", nterms)
-                    print("number of terms Considered: ", n)
-                    print("positions: ", documentPositions)
-                    print("distance: ", distance)
-                    print("x: ", x)                
-                    print("ntermScore: ", ntermScore)
-                    print("distanceScore: ", distanceScore)
-                    print("totalScore: ", totalscore)
-                    print("---------------")'''
 
             smallestPost.increment()
         
